@@ -8,7 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.29.0" />
     <PackageReference Include="OpenCvSharp5.Windows" Version="5.0.0.20260806" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="model\033_Hand_Detection_and_Tracking-full-model_float32.onnx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

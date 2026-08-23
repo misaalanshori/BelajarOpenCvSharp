@@ -1,0 +1,48 @@
+ATTRIBUTION
+===========
+
+Model: Hand Detection and Tracking (Palm Detection - Full)
+File:  033_Hand_Detection_and_Tracking-full-model_float32.onnx
+
+-------------------------------------------------------------------------------
+Original Model
+-------------------------------------------------------------------------------
+Copyright 2019 Google LLC
+
+The original model was developed by Google as part of the MediaPipe framework.
+Source: https://github.com/google/mediapipe/tree/master/mediapipe/models
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+-------------------------------------------------------------------------------
+ONNX Conversion
+-------------------------------------------------------------------------------
+Copyright 2021 Katsuya Hyodo (PINTO0309)
+
+The original TFLite model was converted to ONNX format by Katsuya Hyodo.
+Source: https://github.com/PINTO0309/PINTO_model_zoo/tree/main/033_Hand_Detection_and_Tracking
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+-------------------------------------------------------------------------------
+License Summary
+-------------------------------------------------------------------------------
+Both the original model and the ONNX conversion are distributed under the
+Apache License, Version 2.0. Redistribution in source or binary form is
+permitted provided that:
+
+  1. A copy of the Apache 2.0 License is included with any distribution.
+  2. Any modifications to the files are clearly stated.
+  3. All original copyright, patent, and attribution notices are retained.
+  4. Google's and PINTO0309's trademarks and branding are not used to
+     endorse or promote derivative works without prior written permission.
+
+Full license text: http://www.apache.org/licenses/LICENSE-2.0
