@@ -6,6 +6,15 @@ namespace BelajarOpenCvSharp
 {
     internal class Program
     {
+        public readonly record struct Point2D(float X, float Y);
+        public readonly record struct BoundingBox(float X, float Y, float Width, float Height);
+
+        public record PalmDetection(
+            BoundingBox Box,
+            IReadOnlyList<Point2D> Keypoints, // The 7 decoded coarse palm points
+            float Score
+        );
+
         private static readonly List<Anchor> Anchors = BlazePalmAnchors.Generate(192);
         static void Main(string[] args)
         {
@@ -13,8 +22,18 @@ namespace BelajarOpenCvSharp
             var modelPath = Path.Combine(AppContext.BaseDirectory, "model", "033_Hand_Detection_and_Tracking-full-model_float32.onnx");
             using var onnxSession = new InferenceSession(modelPath);
 
+            var landmarkModelPath = Path.Combine(AppContext.BaseDirectory, "model", "hand_landmark.onnx");
+            using var landmarkSession = new InferenceSession(landmarkModelPath);
+
+
+            //// Check input structure
+            //foreach (var input in landmarkSession.InputMetadata)
+            //{
+            //    Console.WriteLine($"Input: {input.Key}, Dimensions: [{string.Join(", ", input.Value.Dimensions)}]");
+            //}
+
             //// Check output structure
-            //foreach (var output in onnxSession.OutputMetadata)
+            //foreach (var output in landmarkSession.OutputMetadata)
             //{
             //    Console.WriteLine($"Output: {output.Key}, Dimensions: [{string.Join(", ", output.Value.Dimensions)}]");
             //}
@@ -63,7 +82,7 @@ namespace BelajarOpenCvSharp
 
                 using var results = onnxSession.Run(inputs);
 
-                float scoreThreshold = 0.8f;
+                float scoreThreshold = 0.5f;
 
                 List<int> acceptedAnchors = new();
 
@@ -72,6 +91,7 @@ namespace BelajarOpenCvSharp
 
                 List<Rect2d> candBoxes = new();
                 List<float> candScores = new();
+                List<List<Point2D>> candKeypoints = new();
                 for (int i = 0; i < 2016; i++)
                 {
                     float score = 1.0f / (1.0f + MathF.Exp(-rawScores[i]));
@@ -89,9 +109,19 @@ namespace BelajarOpenCvSharp
                     float x = cx - (w / 2f);
                     float y = cy - (h / 2f);
 
+                    List<Point2D> keypoints = new();
+                    for (int j = 0; j < 7; j++)
+                    {
+                        int keyOffset = offset + 4 + (j * 2);
+                        float keyX = rawBoxes[keyOffset] / 192f + anchor.XCenter;
+                        float keyY = rawBoxes[keyOffset + 1] / 192f + anchor.YCenter;
+                        keypoints.Add(new Point2D(keyX, keyY));
+                    }
+
                     candBoxes.Add(new(x,y,w,h));
                     candScores.Add(score);
-                    Console.WriteLine($"{x}, {y}, {w}, {h} -> {score}");
+                    candKeypoints.Add(keypoints);
+                    // Console.WriteLine($"{x}, {y}, {w}, {h} -> {score}");
                 }
 
                 var resultBoxes = candBoxes.Select(box => new Rect(
@@ -99,12 +129,131 @@ namespace BelajarOpenCvSharp
                     (int)(box.Width * width), (int)(box.Height * height)
                     )).ToArray();
 
-                Cv2.Dnn.NMSBoxes(resultBoxes, candScores, scoreThreshold, 0.3f, out int[] indices);
                 
-                foreach (var box in indices.Select(idx => resultBoxes[idx]))
+
+                Cv2.Dnn.NMSBoxes(resultBoxes, candScores, scoreThreshold, 0.3f, out int[] indices);
+
+                List<Mat> hands = new();
+
+                int handIdx = 0;
+                foreach (var idx in indices)
                 {
+                    var box = resultBoxes[idx];
+                    //var frameCopy = new Mat();
+                    //currentFrame.CopyTo(frameCopy);
+                    
+                    var keypoints = candKeypoints[idx];
+                    
+                    var wrist = keypoints[0];
+                    var middle = keypoints[2];
+
+                    // math for rotation
+                    /*
+                     - so, we take the distance between the middle knuckle and the wrist (both in the x and the y)
+                       correction: this isnt just "distance", this is a vector because there is direction (wrist to middle)
+                     - then we divide pi by 2 and subtract the 2-arg arctangent of -1*dy and dx
+                       according to wikipedia atan2(y, x) is used to convert from rect coords to polar coords, whatever that means
+                       but basically that means we get the angle in radians (which we then turn into degrees)
+                       and dy is flipped because opencv coordinate system stuff
+                       
+                     */
+                    float dx = middle.X - wrist.X;
+                    float dy = middle.Y - wrist.Y;
+
+                    float rotRad = MathF.PI / 2.0f - MathF.Atan2(-dy, dx);
+                    float rotDeg = rotRad * (180.0f / MathF.PI);
+
+                    // resize the box
+                    /*
+                     - so first we get just the widest dimension of the palm bounding box
+                       and multiply it by 2.6 to ensure it covers the entire hand 
+                     - we also figure out the palm's center by taking the box coordinates,
+                       which I think would be top left right? and then adding half the width/height
+                       okay this one shouldnt be too confusing
+                     */
+                    float palmSizePx = MathF.Max(box.Width, box.Height);
+                    float handBoxSizePx = palmSizePx * 2.6f;
+
+                    float palmCenterX = box.X + box.Width / 2;
+                    float palmCenterY = box.Y + box.Height / 2;
+
+                    // shift the box
+                    /*
+                     - we shift the box by half the box's height
+                     - so like basically we shift the palm center by the sin/cos of our rotation
+                       multiplied by our px offset, something something triangles. 
+                       man, i wont try to act like i fully remember trigonometry
+                       refer to: https://share.gemini.google/DnvbPvzkOo8f
+                     */
+                    float shiftPx = -0.5f * box.Height;
+                    float handCenterX = palmCenterX + (shiftPx * MathF.Sin(rotRad));
+                    float handCenterY = palmCenterY + (shiftPx * MathF.Cos(rotRad));
+
+                    Point2f center = new(handCenterX, handCenterY);
+                    Size targetSize = new(224, 224);
+
+                    float scale = 224.0f / handBoxSizePx;
+
+                    // basically this sets up the math to move the image around
+                    // once again refer to the gemini link above
+                    Mat affineMatrix = Cv2.GetRotationMatrix2D(center, rotDeg, scale);
+
+                    // this part here modifies the matrix made above to adjust the center point? idk
+                    double tX = affineMatrix.At<Double>(0, 2) + (112.0 - center.X);
+                    double tY = affineMatrix.At<Double>(1, 2) + (112.0 - center.Y);
+                    affineMatrix.Set(0, 2, tX); 
+                    affineMatrix.Set(1, 2, tY);
+
+                    var cropppedHand = new Mat();
+                    Cv2.WarpAffine(currentFrame, cropppedHand, affineMatrix, targetSize, InterpolationFlags.Linear, BorderTypes.Constant, Scalar.Black);
+
+                    var handInputTensor = new DenseTensor<float>(new[] { 1, 224, 224, 3 });
+                    for (int y = 0; y < 224; y++)
+                    {
+                        for (int x = 0; x < 224; x++)
+                        {
+                            var pixel = cropppedHand.At<Vec3b>(y, x);
+                            // what if we just flip the BGR to RGB here?
+                            handInputTensor[0, y, x, 0] = pixel.Item2 / 255.0f;
+                            handInputTensor[0, y, x, 1] = pixel.Item1 / 255.0f;
+                            handInputTensor[0, y, x, 2] = pixel.Item0 / 255.0f;
+                        }
+                    }
+
+                    var landmarkInputs = new List<NamedOnnxValue> { NamedOnnxValue.CreateFromTensor("input_1", handInputTensor) };
+
+                    using var landmarkResults = landmarkSession.Run(landmarkInputs);
+
+                    var rawLandmarks = landmarkResults.First(r => r.Name == "Identity").AsTensor<float>().ToArray();
+
+                    List<Point2D> landmarks = new();
+                    
+                    for (int j = 0; j < 21; j++)
+                    {
+                        int offset = j * 3;
+
+                        float landmarkX = rawLandmarks[offset];
+                        float landmarkY = rawLandmarks[offset+1];
+                        Cv2.Circle(cropppedHand, new Point((int)landmarkX, (int)landmarkY), 5, Scalar.Yellow);
+                    }
+
+                    try
+                    {
+                        var handFrame = cropppedHand;
+                        Cv2.ImShow($"hand{handIdx}", handFrame);
+                    }
+                    catch
+                    {
+
+                    }
 
                     Cv2.Rectangle(currentFrame, box, Scalar.Green, 1);
+                    foreach (var kp in keypoints)
+                    {
+                        Cv2.Circle(currentFrame, new Point(kp.X * width, kp.Y * height), 5, Scalar.Red);
+                    }
+                    
+                    handIdx++;
                 }
 
 

@@ -16,6 +16,9 @@
     <None Update="model\033_Hand_Detection_and_Tracking-full-model_float32.onnx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="model\hand_landmark.onnx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>
