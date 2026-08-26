@@ -149,18 +149,33 @@ namespace BelajarOpenCvSharp
 
                     // math for rotation
                     /*
-                     - so, we take the distance between the middle knuckle and the wrist (both in the x and the y)
-                       correction: this isnt just "distance", this is a vector because there is direction (wrist to middle)
-                     - then we divide pi by 2 and subtract the 2-arg arctangent of -1*dy and dx
-                       according to wikipedia atan2(y, x) is used to convert from rect coords to polar coords, whatever that means
-                       but basically that means we get the angle in radians (which we then turn into degrees)
-                       and dy is flipped because opencv coordinate system stuff
-                       
+                     - so first we get those keypoints multiplied by real dimensions
+                     - we get the delta between the position of the middle knuckle point
+                       and wrist point, this gets us vx and vy, which are vectors
+                     - so then we calculate the actual straight line distance (fancy term: euclidian distance) (in pixels) between the wrist and the middle knuckle (vLen)
+                     - then we normalize our vx and vy by using vLen, this apparently mean dirX and dirY contains only directions
                      */
-                    float dx = middle.X - wrist.X;
-                    float dy = middle.Y - wrist.Y;
+                    float middleX = middle.X * width;
+                    float wristX = wrist.X * width;
+                    float middleY = middle.Y * height;
+                    float wristY = wrist.Y * height;
 
-                    float rotRad = MathF.PI / 2.0f - MathF.Atan2(-dy, dx);
+                    float vx = middleX - wristX;
+                    float vy = middleY - wristY;
+                    float vLen = MathF.Sqrt(vx * vx + vy * vy);
+
+                    // so apparently the 1e-6f is an "epsilon", a really small number (0.000001) that is there to just prevent division by zero, not **technically** part of the formula
+                    float dirX = vx / (vLen + 1e-6f); 
+                    float dirY = vy / (vLen + 1e-6f);
+
+                    // get rotation
+                    /*
+                     - then we divide pi by 2 and subtract the 2-arg arctangent of -1*dirY and dirX
+                       according to wikipedia atan2(y, x) is used to convert from rect coords to polar coords, whatever that means (okay i actually know what that means, kinda, but still)
+                       but basically that means we get the angle in radians (which we then turn into degrees)
+                       and dirY is flipped because opencv coordinate system stuff
+                     */
+                    float rotRad = MathF.PI / 2.0f - MathF.Atan2(-dirY, dirX);
                     float rotDeg = rotRad * (180.0f / MathF.PI);
 
                     // resize the box
@@ -174,20 +189,17 @@ namespace BelajarOpenCvSharp
                     float palmSizePx = MathF.Max(box.Width, box.Height);
                     float handBoxSizePx = palmSizePx * 2.6f;
 
-                    float palmCenterX = box.X + box.Width / 2;
-                    float palmCenterY = box.Y + box.Height / 2;
+                    float palmCenterX = box.X + box.Width / 2.0f;
+                    float palmCenterY = box.Y + box.Height / 2.0f;
 
                     // shift the box
                     /*
-                     - we shift the box by half the box's height
-                     - so like basically we shift the palm center by the sin/cos of our rotation
-                       multiplied by our px offset, something something triangles. 
-                       man, i wont try to act like i fully remember trigonometry
-                       refer to: https://share.gemini.google/DnvbPvzkOo8f
+                     - we shift the box by half the palm's max size
+                     - we offset the palmCenter coords by amount of pixel shift (shiftPx) multiplied by the direction (dirX and dirY) 
                      */
-                    float shiftPx = -0.5f * box.Height;
-                    float handCenterX = palmCenterX + (shiftPx * MathF.Sin(rotRad));
-                    float handCenterY = palmCenterY + (shiftPx * MathF.Cos(rotRad));
+                    float shiftPx = 0.5f * palmSizePx;
+                    float handCenterX = palmCenterX + (shiftPx * dirX);
+                    float handCenterY = palmCenterY + (shiftPx * dirY);
 
                     Point2f center = new(handCenterX, handCenterY);
                     Size targetSize = new(224, 224);
@@ -195,7 +207,7 @@ namespace BelajarOpenCvSharp
                     float scale = 224.0f / handBoxSizePx;
 
                     // basically this sets up the math to move the image around
-                    // once again refer to the gemini link above
+                    // just refer to this gemini link https://share.gemini.google/DnvbPvzkOo8f
                     Mat affineMatrix = Cv2.GetRotationMatrix2D(center, rotDeg, scale);
 
                     // this part here modifies the matrix made above to adjust the center point? idk
