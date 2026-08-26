@@ -247,6 +247,27 @@ namespace BelajarOpenCvSharp
 
                     }
 
+                    using var invAffine = new Mat();
+                    Cv2.InvertAffineTransform(affineMatrix, invAffine);
+
+                    for (int i = 0; i < 21; i++)
+                    {
+                        int offset = i * 3;
+                        float lx = rawLandmarks[offset];
+                        float ly = rawLandmarks[offset + 1];
+
+                        double m00 = invAffine.At<double>(0, 0);
+                        double m01 = invAffine.At<double>(0, 1);
+                        double m02 = invAffine.At<double>(0, 2);
+                        double m10 = invAffine.At<double>(1, 0);
+                        double m11 = invAffine.At<double>(1, 1);
+                        double m12 = invAffine.At<double>(1, 2);
+
+                        float ox = (float)(m00 * lx + m01 * ly + m02);
+                        float oy = (float)(m10 * lx + m11 * ly + m12);
+                        Cv2.Circle(currentFrame, new Point(ox, oy), 5, Scalar.Yellow);
+                    }
+
                     Cv2.Rectangle(currentFrame, box, Scalar.Green, 1);
                     foreach (var kp in keypoints)
                     {
